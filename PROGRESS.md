@@ -238,10 +238,12 @@ require (
 
 ## 🐛 Issues Conhecidos
 
-1. Go não está instalado no ambiente de desenvolvedo (mas exe funciona)
-2. Não há validação de salvar antes de sair (perde dados)
-3. File explorer não mostra subdiretórios recursivamente
-4. KV save pode falhar silenciosamente
+1. ~~Go não está instalado~~ ✅ Instalado
+2. ~~Mensagens de tema muito longas~~ ✅ Corrigido
+3. ~~Modified indicator incorreto~~ ✅ Corrigido
+4. ~~Preview scroll crash~~ ✅ Corrigido
+5. Validação de salvar antes de sair (perde dados)
+6. File explorer não mostra subdiretórios recursivamente
 
 ---
 
