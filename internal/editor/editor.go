@@ -16,6 +16,7 @@ const (
 	ModeVisual       // Visual character selection
 	ModeVisualLine   // Visual line selection
 	ModeVisualBlock  // Visual block selection
+	ModeReplace      // Replace single character mode
 )
 
 // Selection represents a text selection
@@ -948,7 +949,79 @@ func (e *Editor) GetModeString() string {
 		return "V-LINE"
 	case ModeVisualBlock:
 		return "V-BLOCK"
+	case ModeReplace:
+		return "REPLACE"
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// EnterReplaceMode enters replace mode
+func (e *Editor) EnterReplaceMode() {
+	e.Mode = ModeReplace
+}
+
+// ReplaceChar replaces the character under cursor and exits replace mode
+func (e *Editor) ReplaceChar(ch rune) {
+	if e.CursorY >= len(e.Lines) {
+		return
+	}
+	
+	line := e.Lines[e.CursorY]
+	if e.CursorX < len(line) {
+		e.Lines[e.CursorY] = line[:e.CursorX] + string(ch) + line[e.CursorX+1:]
+		e.Modified = true
+		e.Mode = ModeNormal
+	}
+}
+
+// SubstituteLine performs substitution on current line (:s/old/new/)
+func (e *Editor) SubstituteLine(old, new string, global bool) int {
+	if e.CursorY >= len(e.Lines) {
+		return 0
+	}
+	
+	line := e.Lines[e.CursorY]
+	count := 0
+	
+	if global {
+		// Replace all occurrences in line
+		newLine := strings.ReplaceAll(line, old, new)
+		count = strings.Count(line, old)
+		e.Lines[e.CursorY] = newLine
+	} else {
+		// Replace first occurrence
+		idx := strings.Index(line, old)
+		if idx != -1 {
+			e.Lines[e.CursorY] = line[:idx] + new + line[idx+len(old):]
+			count = 1
+		}
+	}
+	
+	if count > 0 {
+		e.Modified = true
+	}
+	
+	return count
+}
+
+// SubstituteAll performs substitution on all lines
+func (e *Editor) SubstituteAll(old, new string) int {
+	totalCount := 0
+	
+	for i := range e.Lines {
+		line := e.Lines[i]
+		if strings.Contains(line, old) {
+			newLine := strings.ReplaceAll(line, old, new)
+			count := strings.Count(line, old)
+			e.Lines[i] = newLine
+			totalCount += count
+		}
+	}
+	
+	if totalCount > 0 {
+		e.Modified = true
+	}
+	
+	return totalCount
 }

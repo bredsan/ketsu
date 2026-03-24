@@ -6,8 +6,8 @@
 
 | Fase | Status | Progresso |
 |------|--------|-----------|
-| Fase 1 - Core (MVP) | 🟢 Quase completo | ~85% |
-| Fase 2 - Busca Avançada | 🟡 Em andamento | 30% |
+| Fase 1 - Core (MVP) | 🟢 Completo | ~95% |
+| Fase 2 - Busca Avançada | 🟢 Implementada | 80% |
 | Fase 3 - Scripting | 🔴 Não iniciado | 0% |
 | Fase 4 - Plugins | 🔴 Não iniciado | 0% |
 | Fase 5 - Avançado | 🔴 Não iniciado | 5% |
@@ -45,6 +45,10 @@
 - [x] Ketsu Shell (console KV interativo)
 - [x] Comandos KV: key=value, keys *, key++, key--
 - [x] **Layout flexível** - Explorer + Editor + Preview
+- [x] **Modo Replace (R)** - Substituir caracteres continuamente
+- [x] **Substituição (:s)** - Comando :s/old/new/g
+- [x] **Fuzzy Finder** - Busca difusa de arquivos (Ctrl+F)
+- [x] **Busca por Tags** - Encontrar arquivos por #tags
 
 ### Interface (Fase 1)
 
@@ -81,11 +85,11 @@
 - [x] Undo/Redo (u, Ctrl+R) **✓ IMPLEMENTADO**
 - [x] Comandos: dd, cc, yy, p **✓ IMPLEMENTADO**
 
-### Fase 2 - Busca Avançada (em andamento)
+### Fase 2 - Busca Avançada
 
-- [ ] Fuzzy finder integrado (estilo fzf)
+- [x] Fuzzy finder integrado (estilo fzf) **✓ IMPLEMENTADO**
 - [ ] Busca em tempo real com preview
-- [ ] Busca por tags (#tag)
+- [x] Busca por tags (#tag) **✓ IMPLEMENTADO**
 - [ ] Busca em arquivos .db por campos
 - [ ] Histórico de buscas
 
@@ -114,8 +118,8 @@
 ### Editor - Recursos Vim Faltando
 
 - [ ] Modo Visual Block (Ctrl+V)
-- [ ] Modo Replace (R)
-- [ ] Substituição (:s)
+- [x] Modo Replace (R) **✓ IMPLEMENTADO**
+- [x] Substituição (:s) **✓ IMPLEMENTADO**
 - [ ] Text objects (diw, ciw, etc.)
 - [ ] Marcas (m, ')
 - [ ] Macros (q, @)
@@ -134,11 +138,13 @@
 
 ```
 cmd/ketsu/main.go          ✅ Entry point funcional
-internal/core/core.go      ✅ Lógica principal (152 linhas)
-internal/editor/editor.go  ✅ Editor Vim-like (266 linhas)
-internal/ui/main.go        ✅ Interface TUI (685 linhas)
-internal/ui/theme.go       ✅ Sistema de temas (310 linhas)
-internal/kv/store.go       ✅ Sistema KV (233 linhas)
+internal/core/core.go      ✅ Lógica principal
+internal/editor/editor.go  ✅ Editor Vim-like (Replace mode)
+internal/ui/main.go        ✅ Interface TUI (Finder integrado)
+internal/ui/theme.go       ✅ Sistema de temas
+internal/kv/store.go       ✅ Sistema KV
+internal/markdown/markdown.go ✅ Parser Markdown (Goldmark)
+internal/finder/finder.go  ✅ Fuzzy Finder (NOVO)
 ```
 
 ### Arquivos Vazios/Não existentes
@@ -167,6 +173,25 @@ require (
 - [ ] `github.com/go-yaml/yaml` - YAML parser
 - [ ] `github.com/ollama/ollama` - Ollama client
 - [ ] `github.com/skratchdot/go-fuzzyfinder` - Fuzzy finder
+
+---
+
+## 📝 Últimas Mudanças (24/03/2026)
+
+### Novas Funcionalidades (Session 2)
+
+- **Fuzzy Finder** (`internal/finder/finder.go`)
+  - Busca difusa de arquivos e tags
+  - Navegação com j/k, Enter para selecionar
+  - Atalhos: Ctrl+F (arquivos), Ctrl+G (busca)
+  
+- **Modo Replace (R)**
+  - Substituir caracteres continuamente
+  - Com `r` substitui um único caractere
+  
+- **Substituição (:s)**
+  - Formato: `:s/old/new/g`
+  - Substituição na linha atual ou global
 
 ---
 

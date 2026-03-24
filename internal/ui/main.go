@@ -10,6 +10,7 @@ import (
 	"github.com/charmbracelet/lipgloss"
 	"github.com/ketsu/ketsu/internal/core"
 	"github.com/ketsu/ketsu/internal/editor"
+	"github.com/ketsu/ketsu/internal/finder"
 	"github.com/ketsu/ketsu/internal/markdown"
 )
 
@@ -17,6 +18,7 @@ type model struct {
 	core           *core.Core
 	theme          *ThemeManager
 	markdown       *markdown.Renderer
+	finder         *finder.Finder
 	width          int
 	height         int
 	commandInput   string
@@ -26,6 +28,8 @@ type model struct {
 	searchInput    string
 	showExplorer   bool
 	showPreview    bool
+	finderMode     bool    // Fuzzy finder mode
+	finderType     string  // "file", "tag", "search"
 	
 	selectedFile   int
 	explorerHeight int
@@ -47,8 +51,11 @@ func New() *model {
 		core:           core.New(),
 		theme:          NewThemeManager(),
 		markdown:       markdown.New(),
+		finder:         finder.New(),
 		showExplorer:   true,
 		showPreview:    false,
+		finderMode:     false,
+		finderType:     "file",
 		selectedFile:   0,
 		headerHeight:   3,
 		footerHeight:   3,
@@ -97,6 +104,10 @@ func (m *model) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 }
 
 func (m *model) handleKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	if m.finderMode {
+		return m.handleFinderKey(msg)
+	}
+	
 	if m.shellMode {
 		return m.handleShellKey(msg)
 	}
@@ -143,6 +154,12 @@ func (m *model) handleKeyCommon(msg tea.KeyMsg) {
 		m.core.SaveKV()
 		m.core.SaveFile()
 		m.core.StatusMessage = "Saved"
+	case "ctrl+f":
+		// Open file finder
+		m.openFinder("file")
+	case "ctrl+g":
+		// Open search finder
+		m.openFinder("search")
 	case "tab":
 		m.showExplorer = !m.showExplorer
 	case "shift+tab":
@@ -151,7 +168,7 @@ func (m *model) handleKeyCommon(msg tea.KeyMsg) {
 		m.showExplorer = !m.showExplorer
 	case "ctrl+p":
 		m.showPreview = !m.showPreview
-	case "ctrl+t":
+	case "ctrl+shift+t":
 		// Cycle through themes
 		themes := m.theme.GetAvailableThemes()
 		current := m.theme.GetName()
@@ -285,6 +302,8 @@ func (m *model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	case "I":
 		e.MoveToFirstNonBlank()
 		e.Mode = editor.ModeInsert
+	case "R":
+		e.EnterReplaceMode()
 	case "o":
 		e.OpenLine()
 		e.Mode = editor.ModeInsert
@@ -415,15 +434,35 @@ func (m *model) handleEditorKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 	
 	// Replace
 	if msg.String() == "r" {
-		// Next character will be the replacement
+		// Next character will be the replacement (single char)
 		m.pendingCmd = "r"
 		return m, nil
 	}
 	
+	// Handle pending commands
+	if m.pendingCmd == "r" {
+		for _, ch := range msg.Runes {
+			e.ReplaceChar(ch)
+			m.pendingCmd = ""
+			break
+		}
+		return m, nil
+	}
+	
+	// Handle Insert mode
 	if e.Mode == editor.ModeInsert {
 		for _, ch := range msg.Runes {
 			e.InsertChar(ch)
 		}
+		return m, nil
+	}
+	
+	// Handle Replace mode
+	if e.Mode == editor.ModeReplace {
+		for _, ch := range msg.Runes {
+			e.ReplaceChar(ch)
+		}
+		return m, nil
 	}
 	
 	return m, nil
@@ -550,6 +589,17 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			return m, nil
 		}
 		
+		// Handle substitution command (:s/old/new/g)
+		if strings.HasPrefix(cmdLine, "s/") || strings.HasPrefix(cmdLine, "substitute ") {
+			count := m.handleSubstitute(cmdLine)
+			if count > 0 {
+				m.core.StatusMessage = fmt.Sprintf("%d substitution(s)", count)
+			} else {
+				m.core.StatusMessage = "Pattern not found"
+			}
+			return m, nil
+		}
+		
 		// Handle other commands
 		result := e.ExecuteCommand(cmdLine)
 		
@@ -644,6 +694,11 @@ func (m *model) handleSearchKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 func (m *model) View() string {
 	t := m.theme.GetTheme()
 	var s string
+	
+	// If finder mode is active, show finder overlay
+	if m.finderMode {
+		return m.viewFinder()
+	}
 	
 	s += m.viewHeader()
 	
@@ -1154,4 +1209,270 @@ func viewToString(v core.View) string {
 	default:
 		return "UNKNOWN"
 	}
+}
+
+// Finder functions
+
+func (m *model) openFinder(finderType string) {
+	m.finderMode = true
+	m.finderType = finderType
+	m.finder.Clear()
+	
+	dir := m.core.SpaceDir
+	if dir == "" {
+		dir, _ = os.Getwd()
+	}
+	
+	switch finderType {
+	case "file":
+		items := finder.ScanDirectoryRecursive(dir, 3, false)
+		m.finder.SetItems(items)
+		m.core.StatusMessage = "File finder - type to search"
+	case "tag":
+		// Search for tags
+		items := finder.FindFilesWithTag(dir, "")
+		if len(items) == 0 {
+			// If no tags found, show all files
+			items = finder.ScanDirectoryRecursive(dir, 3, false)
+		}
+		m.finder.SetItems(items)
+		m.core.StatusMessage = "Tag finder - type to search"
+	case "search":
+		// Full text search
+		m.core.StatusMessage = "Search - type to find text"
+	}
+}
+
+func (m *model) handleFinderKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
+	switch msg.String() {
+	case "esc":
+		m.finderMode = false
+		m.core.StatusMessage = ""
+	case "enter":
+		// Select current item
+		item := m.finder.GetSelected()
+		if item != nil && !item.IsDir {
+			m.core.OpenFile(item.Path)
+			m.finderMode = false
+			m.core.StatusMessage = fmt.Sprintf("Opened: %s", item.Name)
+		} else if item != nil && item.IsDir {
+			// Navigate into directory
+			m.core.SpaceDir = item.Path
+			items := finder.ScanDirectory(item.Path, false)
+			m.finder.SetItems(items)
+			m.finder.Clear()
+		}
+	case "backspace":
+		m.finder.DeleteChar()
+	case "up", "k":
+		m.finder.MoveUp()
+	case "down", "j":
+		m.finder.MoveDown()
+	case "ctrl+u":
+		m.finder.MovePageUp()
+	case "ctrl+d":
+		m.finder.MovePageDown()
+	case "ctrl+a", "home":
+		m.finder.MoveHome()
+	case "ctrl+e", "end":
+		m.finder.MoveEnd()
+	case "ctrl+l":
+		m.finder.Clear()
+	default:
+		// Add character to query
+		for _, ch := range msg.Runes {
+			if ch >= 32 && ch < 127 { // Printable ASCII
+				m.finder.AppendQuery(string(ch))
+			}
+		}
+	}
+	
+	return m, nil
+}
+
+func (m *model) viewFinder() string {
+	t := m.theme.GetTheme()
+	
+	title := "🔍 "
+	switch m.finderType {
+	case "file":
+		title += "File Finder"
+	case "tag":
+		title += "Tag Finder"
+	case "search":
+		title += "Search"
+	}
+	
+	// Header
+	header := lipgloss.NewStyle().
+		Foreground(t.Foreground).
+		Bold(true).
+		Render(title) + "\n"
+	
+	// Search input
+	query := m.finder.GetQuery()
+	searchLine := lipgloss.NewStyle().
+		Foreground(t.Accent).
+		Render("❯ ") + query + "█\n"
+	
+	// Results
+	items := m.finder.GetFiltered()
+	maxItems := m.height - 8
+	if maxItems > len(items) {
+		maxItems = len(items)
+	}
+	
+	var results []string
+	selectedIdx := m.finder.GetSelectedIndex()
+	
+	for i := 0; i < maxItems; i++ {
+		if i >= len(items) {
+			break
+		}
+		
+		item := items[i]
+		line := ""
+		
+		// Selection indicator
+		if i == selectedIdx {
+			line = lipgloss.NewStyle().
+				Background(t.Selection).
+				Foreground(t.Foreground).
+				Bold(true).
+				Render(" → ")
+		} else {
+			line = "   "
+		}
+		
+		// Icon
+		icon := "📄 "
+		if item.IsDir {
+			icon = "📁 "
+		} else {
+			ext := strings.ToLower(item.Name)
+			switch {
+			case strings.HasSuffix(ext, ".md"):
+				icon = "📝 "
+			case strings.HasSuffix(ext, ".go"):
+				icon = "🐹 "
+			case strings.HasSuffix(ext, ".js") || strings.HasSuffix(ext, ".ts"):
+				icon = "📜 "
+			case strings.HasSuffix(ext, ".json") || strings.HasSuffix(ext, ".yaml") || strings.HasSuffix(ext, ".yml") || strings.HasSuffix(ext, ".toml"):
+				icon = "⚙️ "
+			}
+		}
+		line += icon
+		
+		// Name with highlighting
+		name := item.Name
+		if query != "" {
+			name = highlightMatch(name, query)
+		}
+		
+		if i == selectedIdx {
+			line += lipgloss.NewStyle().
+				Background(t.Selection).
+				Foreground(t.Foreground).
+				Render(name)
+		} else {
+			line += lipgloss.NewStyle().
+				Foreground(t.Foreground).
+				Render(name)
+		}
+		
+		// Tag/Path info
+		info := ""
+		if item.Tag != "" {
+			info = lipgloss.NewStyle().
+				Foreground(t.Comment).
+				Render(" [" + item.Tag + "]")
+		} else if item.Path != "" {
+			dir := filepath.Dir(item.Path)
+			if dir != "." {
+				info = lipgloss.NewStyle().
+					Foreground(t.Comment).
+					Render(" " + dir)
+			}
+		}
+		
+		line += info
+		results = append(results, line)
+	}
+	
+	if len(results) == 0 {
+		results = append(results, lipgloss.NewStyle().
+			Foreground(t.Comment).
+			Render("  No results"))
+	}
+	
+	// Footer
+	footer := "\n" + lipgloss.NewStyle().
+		Foreground(t.Comment).
+		Render("↑↓ navigate • Enter open • Esc cancel • Ctrl+L clear")
+	
+	content := header + searchLine + "\n" + strings.Join(results, "\n") + footer
+	
+	return t.BorderStyle().Width(m.width - 4).Render(content)
+}
+
+func highlightMatch(s, query string) string {
+	if query == "" {
+		return s
+	}
+	
+	lowerS := strings.ToLower(s)
+	lowerQ := strings.ToLower(query)
+	
+	idx := strings.Index(lowerS, lowerQ)
+	if idx == -1 {
+		return s
+	}
+	
+	before := s[:idx]
+	match := s[idx : idx+len(query)]
+	after := s[idx+len(query):]
+	
+	return before + "\033[1;33m" + match + "\033[0m" + after
+}
+
+// handleSubstitute handles :s/old/new/g command
+func (m *model) handleSubstitute(cmd string) int {
+	e := m.core.Editor
+	
+	// Parse :s/old/new/g or :s/old/new
+	var old, newStr string
+	global := false
+	
+	if strings.HasPrefix(cmd, "s/") {
+		parts := strings.Split(cmd[2:], "/")
+		if len(parts) >= 2 {
+			old = parts[0]
+			newStr = parts[1]
+			if len(parts) >= 3 && parts[2] == "g" {
+				global = true
+			}
+		}
+	} else if strings.HasPrefix(cmd, "substitute ") {
+		// Parse :substitute old new
+		args := strings.TrimSpace(strings.TrimPrefix(cmd, "substitute "))
+		parts := strings.Fields(args)
+		if len(parts) >= 2 {
+			old = parts[0]
+			newStr = parts[1]
+			if len(parts) >= 3 && parts[2] == "g" {
+				global = true
+			}
+		}
+	}
+	
+	if old == "" {
+		return 0
+	}
+	
+	// Check for % for global file substitution
+	if global {
+		return e.SubstituteAll(old, newStr)
+	}
+	
+	return e.SubstituteLine(old, newStr, global)
 }
