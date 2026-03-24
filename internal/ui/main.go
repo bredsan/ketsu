@@ -570,14 +570,12 @@ func (m *model) handleCommandKey(msg tea.KeyMsg) (tea.Model, tea.Cmd) {
 			if len(parts) > 1 {
 				themeName := strings.ToLower(parts[1])
 				if m.theme.SetTheme(themeName) {
-					m.core.StatusMessage = fmt.Sprintf("Theme set to: %s", themeName)
+					m.core.StatusMessage = "Theme: " + themeName
 				} else {
-					m.core.StatusMessage = fmt.Sprintf("Unknown theme: %s. Available: %s", 
-						themeName, strings.Join(m.theme.GetAvailableThemes(), ", "))
+					m.core.StatusMessage = "Unknown. Use: catppuccin, tokyo-night, nord"
 				}
 			} else {
-				m.core.StatusMessage = fmt.Sprintf("Current theme: %s. Available: %s", 
-					m.theme.GetName(), strings.Join(m.theme.GetAvailableThemes(), ", "))
+				m.core.StatusMessage = "Theme: " + m.theme.GetName()
 			}
 			return m, nil
 		}
@@ -811,8 +809,8 @@ func (m *model) viewFooter() string {
 	
 	// Modified indicator
 	modified := ""
-	if m.core.Editor.Modified {
-		modified = t.ModeStyle("MODIFIED").Render(" + ")
+	if m.core.Editor.Modified && m.core.Editor.FilePath != "" {
+		modified = "[+]"
 	}
 	
 	// Build status bar
@@ -1149,6 +1147,14 @@ func (m *model) viewPreview() string {
 	// Apply scroll
 	lines := strings.Split(rendered, "\n")
 	previewHeight := m.height - m.headerHeight - m.footerHeight - 3
+	
+	if previewHeight <= 0 {
+		previewHeight = 10
+	}
+	
+	if len(lines) == 0 {
+		return t.HeaderStyle().Render("Preview") + "\n" + lipgloss.NewStyle().Foreground(t.Comment).Render("  (empty)")
+	}
 	
 	if m.previewScroll >= len(lines) {
 		m.previewScroll = len(lines) - 1
